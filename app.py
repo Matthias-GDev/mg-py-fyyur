@@ -23,83 +23,17 @@ from flask_migrate import Migrate
 app = Flask(__name__)
 moment = Moment(app)
 app.config.from_object('config')
-
-# connect to a local postgresql database
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
-
 #----------------------------------------------------------------------------#
-# Models.
+#DB - Models
 #----------------------------------------------------------------------------#
-
-class Venue(db.Model):
-    __tablename__ = 'Venue'
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
-    city = db.Column(db.String(120))
-    state = db.Column(db.String(120))
-    address = db.Column(db.String(120))
-    phone = db.Column(db.String(120))
-    image_link = db.Column(db.String(500))
-    facebook_link = db.Column(db.String(120))
-    # implement any missing fields, as a database migration using Flask-Migrate
-    #Website link
-    website_link = db.Column(db.String(120))
-    #Looking for talent
-    seeking_newtalents = db.Column(db.Boolean,nullable=True,default=False)
-    #Seeking Description
-    seeking_description = db.Column(db.String(150))
-    
-    #relations
-    genres = db.relationship('Venue_Genre',backref='Venue',lazy=True)
-
-class Venue_Genre(db.Model):
-    __tablename__ = 'Venue_Genre'
-
-    id = db.Column(db.Integer, primary_key=True)
-    genre = db.Column(db.String(40))
-    venue_id = db.Column(db.Integer,db.ForeignKey('Venue.id'),nullable=False)
-
-
-class Artist(db.Model):
-    __tablename__ = 'Artist'
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120))
-    city = db.Column(db.String(120))
-    state = db.Column(db.String(120))
-    phone = db.Column(db.String(120))
-    image_link = db.Column(db.String(500))
-    facebook_link = db.Column(db.String(120))
-    #Website link
-    website_link = db.Column(db.String(120))
-    #Looking for talent
-    seeking_newvenues = db.Column(db.Boolean,nullable=True,default=False)
-    #Seeking Description
-    seeking_description = db.Column(db.String(150))
-
-    #relations
-    genres = db.relationship('Artist_Genre',backref='Artist',lazy=True)
-
-    #implement any missing fields, as a database migration using Flask-Migrate
-
-class Artist_Genre(db.Model):
-    __tablename__ = 'Artist_Genre'
-
-    id = db.Column(db.Integer, primary_key=True)
-    genre = db.Column(db.String(40))
-    artist_id = db.Column(db.Integer,db.ForeignKey('Artist.id'),nullable=False)
-
-class Show(db.Model):
-    __tablename__ = 'Show'
-
-    artistid = db.Column(db.Integer,db.ForeignKey('Artist.id'), primary_key=True)
-    venueid = db.Column(db.Integer,db.ForeignKey('Venue.id'), primary_key=True)
-    starttime = db.Column(db.DateTime,nullable=False)
-
-# Implement Show and Artist models, and complete all model relationships and properties, as a database migration.
+from dbm_Artist import Artist
+from dbm_Artist_Genre import Artist_Genre
+from dbm_Venue import Venue
+from dbm_Venue_Genre import Venue_Genre
+from dbm_Show import Show
 
 #----------------------------------------------------------------------------#
 # Filters.
@@ -130,20 +64,17 @@ def index():
 def venues():
   # replace with real venues data.
   # num_shows should be aggregated based on number of upcoming shows per venue.
-
   try:
       new_venues_data=[]
+      cc_result = db.session.query(Venue).all()
 
-      #Get all DISTINCT cities
-      cities = db.session.query(Venue.city,Venue.state).distinct(Venue.city,Venue.state).all()
-
-      for city in cities:
-        data = {}
-        data['city'] = city[0]
-        data['state'] = city[1]
-        data['venues'] = db.session.query(Venue).filter(Venue.city == city[0]).filter(Venue.state == city[1]).all()
+      for itemx in cc_result:
+        data={
+          'city':itemx.city,
+          'state':itemx.state,
+          'venues':[itemx]
+        }
         new_venues_data.append(data)
-
   except:
     flash('An error occurred loading Venues')
     print(sys.exc_info())
@@ -158,6 +89,9 @@ def search_venues():
   # implement search on artists with partial string search. Ensure it is case-insensitive.
   # seach for Hop should return 'The Musical Hop'.
   # search for 'Music' should return 'The Musical Hop' and 'Park Square Live Music & Coffee'
+
+  #TODO:JOIN
+
   try:
     search_term = request.form.get('search_term')
     searchresult = db.session.query(Venue).filter(Venue.name.ilike(f'%{search_term}%'))
@@ -192,35 +126,49 @@ def show_venue(venue_id):
   data={}
 
   try:
-    venueitem = db.session.query(Venue).filter(Venue.id==venue_id).all()[0]
-
-    venuesgenres = db.session.query(Venue_Genre).filter(Venue_Genre.venue_id==venue_id).all()
+    venueresults = (db.session.query(Venue,Venue_Genre)
+        .join(Venue_Genre)
+        .filter(Venue.id==venue_id)
+        .filter(Venue_Genre.venue_id==venue_id)
+    ).all()
 
     genresdata = []
-    for genreitem in venuesgenres:
-      genresdata.append(genreitem.genre)
+    for item in venueresults:
+      genresdata.append(item.Venue_Genre.genre)
+
+    venueitem = venueresults[0].Venue
 
     datapastshows=[]
-    pastshows = db.session.query(Show).filter(Show.venueid == venueitem.id).filter(Show.starttime<=str(datetime.now()).split('.',1)[0] ).all()
-    for pastshowitem in pastshows:
-      artist=db.session.query(Artist).filter(Artist.id==pastshowitem.artistid).all()[0]
+    past_results = (db.session.query(Show,Artist)
+        .join(Venue)
+        .join(Artist)
+        .filter(Show.venueid==venueitem.id)
+        .filter(Show.starttime<=str(datetime.now()).split('.',1)[0])
+    ).all()
+
+    for showitem in past_results:
       pastshow={
-        'artist_id': artist.id,
-        'artist_image_link': artist.image_link,
-        'start_time': pastshowitem.starttime
+        'artist_id': showitem.Artist.id,
+        'artist_image_link': showitem.Artist.image_link,
+        'start_time': showitem.Show.starttime
       }
       datapastshows.append(pastshow)
-
+    
     dataupcumingshows=[]
-    upcomingshows = db.session.query(Show).filter(Show.venueid == venueitem.id).filter(Show.starttime>=str(datetime.now()).split('.',1)[0]).all()
-    for showitem in upcomingshows:
-      artist=db.session.query(Artist).filter(Artist.id==showitem.artistid).all()[0]
-      upshow={
-        'artist_id': artist.id,
-        'artist_image_link': artist.image_link,
-        'start_time': showitem.starttime
+    upcoming_results = (db.session.query(Show,Artist)
+        .join(Venue)
+        .join(Artist)
+        .filter(Show.venueid==venueitem.id)
+        .filter(Show.starttime>=str(datetime.now()).split('.',1)[0])
+    ).all()
+
+    for showitem in upcoming_results:
+      pastshow={
+        'artist_id': showitem.Artist.id,
+        'artist_image_link': showitem.Artist.image_link,
+        'start_time': showitem.Show.starttime
       }
-      dataupcumingshows.append(upshow)
+      dataupcumingshows.append(pastshow)
 
     data = {
         'id': venueitem.id,
@@ -301,7 +249,6 @@ def create_venue_submission():
       new_genre = Venue_Genre(genre=genreitem)
       new_genre.venue_id = newvenuedata.id
       db.session.add(new_genre)
-      #array_venues.append(new_genre)
     
     db.session.commit()
     db.session.refresh(newvenuedata)
@@ -377,6 +324,8 @@ def search_artists():
   # seach for 'A' should return 'Guns N Petals', 'Matt Quevado', and 'The Wild Sax Band'.
   # search for 'band' should return 'The Wild Sax Band'.
 
+  #TODO:JOIN
+
   try:
     search_term = request.form.get('search_term')
     searchresult = db.session.query(Artist).filter(Artist.name.ilike(f'%{search_term}%'))
@@ -408,6 +357,8 @@ def search_artists():
 def show_artist(artist_id):
   # shows the artist page with the given artist_id
   # replace with real artist data from the artist table, using artist_id
+
+  #TODO:JOIN
 
   data={}
 
@@ -477,6 +428,8 @@ def show_artist(artist_id):
 def edit_artist(artist_id):
   form = ArtistForm()
   data={}
+
+  #TODO:JOIN
 
   try:
     artist=db.session.query(Artist).filter(Artist.id==artist_id).all()[0]
@@ -701,6 +654,8 @@ def create_artist_submission():
 def shows():
   # displays list of shows at /shows
   # replace with real venues data.
+
+  #TODO:JOIN
   
   data=[]
 
