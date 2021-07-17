@@ -90,35 +90,9 @@ def search_venues():
   # seach for Hop should return 'The Musical Hop'.
   # search for 'Music' should return 'The Musical Hop' and 'Park Square Live Music & Coffee'
 
-  #TODO:JOIN
-
   try:
     search_term = request.form.get('search_term')
     searchresult = db.session.query(Venue).filter(Venue.name.ilike(f'%{search_term}%'))
-    
-    #new
-    search_result=(db.session.query(Venue, func.count(Show))
-        .filter(Venue.name.ilike(f'%{search_term}%'))
-        .join(Show)
-        .filter(Show.venueid == Venue.id)
-        .filter(Show.starttime >= str(datetime.now()).split('.',1)[0])
-        .group_by(Venue)
-    ).all()
-
-    flash(search_result)
-
-    data2=[]
-    for vitem in search_result:
-      ditem={
-        'id':vitem.Venue.id,
-        'name':vitem.Venue.name,
-        'num_upcoming_shows':0
-      }
-      data2.append(ditem)
-    
-    flash(data2)
-    flash("-----")
-  
 
     data=[]
 
@@ -350,8 +324,6 @@ def search_artists():
   # implement search on artists with partial string search. Ensure it is case-insensitive.
   # seach for 'A' should return 'Guns N Petals', 'Matt Quevado', and 'The Wild Sax Band'.
   # search for 'band' should return 'The Wild Sax Band'.
-
-  #TODO:JOIN
 
   try:
     search_term = request.form.get('search_term')
