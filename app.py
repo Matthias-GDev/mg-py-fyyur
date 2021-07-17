@@ -95,6 +95,31 @@ def search_venues():
   try:
     search_term = request.form.get('search_term')
     searchresult = db.session.query(Venue).filter(Venue.name.ilike(f'%{search_term}%'))
+    
+    #new
+    search_result=(db.session.query(Venue, func.count(Show))
+        .filter(Venue.name.ilike(f'%{search_term}%'))
+        .join(Show)
+        .filter(Show.venueid == Venue.id)
+        .filter(Show.starttime >= str(datetime.now()).split('.',1)[0])
+        .group_by(Venue)
+    ).all()
+
+    flash(search_result)
+
+    data2=[]
+    for vitem in search_result:
+      ditem={
+        'id':vitem.Venue.id,
+        'name':vitem.Venue.name,
+        'num_upcoming_shows':0
+      }
+      data2.append(ditem)
+    
+    flash(data2)
+    flash("-----")
+  
+
     data=[]
 
     for venueitem in searchresult:
@@ -105,6 +130,8 @@ def search_venues():
       ditem['num_upcoming_shows'] = len(upcomingshows)
       data.append(ditem)
     
+    flash(data)
+
     response = {
       'count':len(data),
       'data':data,
@@ -358,46 +385,58 @@ def show_artist(artist_id):
   # shows the artist page with the given artist_id
   # replace with real artist data from the artist table, using artist_id
 
-  #TODO:JOIN
-
   data={}
 
   try:
-    artist=db.session.query(Artist).filter(Artist.id==artist_id).all()[0]
-    artistgenres=db.session.query(Artist_Genre).filter(Artist_Genre.artist_id==artist_id)
+    #new
+    artistresults = (db.session.query(Artist,Artist_Genre)
+        .join(Artist_Genre)
+        .filter(Artist.id==artist_id)
+        .filter(Artist_Genre.artist_id==artist_id)
+    ).all()
 
-    genres=[]
-    for genreitem in artistgenres:
-      genres.append(genreitem.genre)
+    genresdata = []
+    for item in artistresults:
+      genresdata.append(item.Artist_Genre.genre)
+
+    artist = artistresults[0].Artist
 
     datapastshows=[]
-    pastshows = db.session.query(Show).filter(Show.artistid == artist_id).filter(Show.starttime<=str(datetime.now()).split('.',1)[0] ).all()
-    for pastshowitem in pastshows:
-      venue=db.session.query(Venue).filter(Venue.id==pastshowitem.venueid).all()[0]
+    past_results = (db.session.query(Show,Artist)
+        .join(Venue)
+        .join(Artist)
+        .filter(Show.artistid==artist.id)
+        .filter(Show.starttime<=str(datetime.now()).split('.',1)[0])
+    ).all()
+
+    for showitem in past_results:
       pastshow={
-        'venue_id': venue.id,
-        'venue_name': venue.name,
-        'venue_image_link': venue.image_link,
-        'start_time': pastshowitem.starttime
+        'artist_id': showitem.Artist.id,
+        'artist_image_link': showitem.Artist.image_link,
+        'start_time': showitem.Show.starttime
       }
       datapastshows.append(pastshow)
 
     dataupcumingshows=[]
-    upcomingshows = db.session.query(Show).filter(Show.artistid == artist_id).filter(Show.starttime>=str(datetime.now()).split('.',1)[0]).all()
-    for showitem in upcomingshows:
-      venue=db.session.query(Venue).filter(Venue.id==pastshowitem.venueid).all()[0]
-      upshow={
-        'venue_id': venue.id,
-        'venue_name': venue.name,
-        'venue_image_link': venue.image_link,
-        'start_time': showitem.starttime
+    upcoming_results = (db.session.query(Show,Artist)
+        .join(Venue)
+        .join(Artist)
+        .filter(Show.artistid==artist.id)
+        .filter(Show.starttime>=str(datetime.now()).split('.',1)[0])
+    ).all()
+
+    for showitem in upcoming_results:
+      upcommingshow={
+        'artist_id': showitem.Artist.id,
+        'artist_image_link': showitem.Artist.image_link,
+        'start_time': showitem.Show.starttime
       }
-      dataupcumingshows.append(upshow)
+      dataupcumingshows.append(upcommingshow)
 
     data={
       'id': artist.id,
       'name': artist.name,
-      'genres': genres,
+      'genres': genresdata,
       'city': artist.city,
       'state': artist.state,
       'phone': artist.phone,
@@ -429,20 +468,23 @@ def edit_artist(artist_id):
   form = ArtistForm()
   data={}
 
-  #TODO:JOIN
-
   try:
-    artist=db.session.query(Artist).filter(Artist.id==artist_id).all()[0]
-    artistgenres=db.session.query(Artist_Genre).filter(Artist_Genre.artist_id==artist_id)
+    artistresults = (db.session.query(Artist,Artist_Genre)
+        .join(Artist_Genre)
+        .filter(Artist.id==artist_id)
+        .filter(Artist_Genre.artist_id==artist_id)
+    ).all()
 
-    genres=[]
-    for genreitem in artistgenres:
-      genres.append(genreitem.genre)
+    genresdata = []
+    for item in artistresults:
+      genresdata.append(item.Artist_Genre.genre)
+
+    artist = artistresults[0].Artist
 
     data = {
       'id': artist.id,
       'name': artist.name,
-      'genres': genres,
+      'genres': genresdata,
       'city': artist.city,
       'state': artist.state,
       'phone': artist.phone,
@@ -452,8 +494,6 @@ def edit_artist(artist_id):
       'seeking_description': artist.seeking_description,
       'image_link': artist.image_link
     }
-
-    flash(data)
 
   except Exception as error:
     flash('An error occurred. During loading artist with id'+str(artist_id)+' Error:'+str(error))
@@ -655,29 +695,22 @@ def shows():
   # displays list of shows at /shows
   # replace with real venues data.
 
-  #TODO:JOIN
-  
   data=[]
 
   try:
+    show_results = (db.session.query(Show,Venue,Artist)
+        .join(Artist)
+        .join(Venue)
+    ).all()
 
-    showsresult = db.session.query(Show).all()
-
-    for showitem in showsresult:
-      artist_id=showitem.artistid
-      venue_id=showitem.venueid
-      starttime=showitem.starttime
-
-      artist=db.session.query(Artist).filter(Artist.id==artist_id).all()[0]
-      venue=db.session.query(Venue).filter(Venue.id==venue_id).all()[0]
-
+    for showitem in show_results:
       showdataitem = {
-        'venue_id':venue.id,
-        'venue_name': venue.name,
-        'artist_id': artist.id,
-        'artist_name': artist.name,
-        'artist_image_link': artist.image_link,
-        'start_time': str(starttime)
+        'venue_id': showitem.Venue.id,
+        'venue_name': showitem.Venue.name,
+        'artist_id': showitem.Artist.id,
+        'artist_name': showitem.Artist.name,
+        'artist_image_link': showitem.Artist.image_link,
+        'start_time': str(showitem.Show.starttime)
       }
       data.append(showdataitem)
 
